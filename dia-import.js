@@ -174,7 +174,7 @@
       }
       if (i < mine.length - 1) await wait(PAUSE_MS);
     }
-    done(`✓ ${changed} precios actualizados`,
+    done(`✓ ${changed} ${changed === 1 ? 'precio actualizado' : 'precios actualizados'}`,
       missing.length ? `No encontrados en Dia (quizá descatalogados): ${missing.slice(0, 5).join(', ')}${missing.length > 5 ? '…' : ''}` : 'Todos tus productos están al día.', true);
   }
 
