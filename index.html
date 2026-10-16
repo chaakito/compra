@@ -18,14 +18,11 @@
   :root { --bg: #f4f4f1; --muted: #8a8a85; }
   @media (prefers-color-scheme: dark) { :root { --bg: #121212; --muted: #8d8d88; } }
   html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
-  /* La app de Google va dentro, respetando la muesca y la barra de inicio del iPhone */
-  iframe {
-    position: fixed; border: 0;
-    top: env(safe-area-inset-top); bottom: env(safe-area-inset-bottom);
-    left: env(safe-area-inset-left); right: env(safe-area-inset-right);
-    width: calc(100% - env(safe-area-inset-left) - env(safe-area-inset-right));
-    height: calc(100% - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-    background: var(--bg);
+  /* La app de Google ocupa toda la pantalla; ella misma deja sitio a la muesca y a la barra de inicio */
+  iframe { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; background: var(--bg); }
+  #probe {
+    position: fixed; visibility: hidden; pointer-events: none;
+    padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
   }
   .loading {
     position: fixed; inset: 0; display: grid; place-items: center;
@@ -35,7 +32,16 @@
 </head>
 <body>
 <div class="loading">Cargando…</div>
-<iframe src="https://script.google.com/macros/s/AKfycby3IDHS9oTtDfsjsYWedcUTkBoDOXbs6V9PcdJLZIHr0fnAsuvxPgfc8I8vQa5jbrE8/exec"
-        title="Lista de la compra" allow="clipboard-write"></iframe>
+<div id="probe"></div>
+<iframe id="app" title="Lista de la compra" allow="clipboard-write"></iframe>
+<script>
+  // Mide la zona segura de este iPhone y se la pasa a la app (dentro de los marcos de Google no se puede medir bien).
+  var cs = getComputedStyle(document.getElementById('probe'));
+  var st = Math.round(parseFloat(cs.paddingTop) || 0);
+  var sb = Math.round(parseFloat(cs.paddingBottom) || 0);
+  document.getElementById('app').src =
+    'https://script.google.com/macros/s/AKfycby3IDHS9oTtDfsjsYWedcUTkBoDOXbs6V9PcdJLZIHr0fnAsuvxPgfc8I8vQa5jbrE8/exec' +
+    '?st=' + st + '&sb=' + sb;
+</script>
 </body>
 </html>
