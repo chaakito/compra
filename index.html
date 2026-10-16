@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Compra</title>
+<!-- Al añadirla a la pantalla de inicio del iPhone: icono propio y pantalla completa, sin barra de Safari -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Compra">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#f4f4f1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121212" media="(prefers-color-scheme: dark)">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+  :root { --bg: #f4f4f1; --muted: #8a8a85; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #121212; --muted: #8d8d88; } }
+  html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
+  /* La app de Google va dentro, respetando la muesca y la barra de inicio del iPhone */
+  iframe {
+    position: fixed; border: 0;
+    top: env(safe-area-inset-top); bottom: env(safe-area-inset-bottom);
+    left: env(safe-area-inset-left); right: env(safe-area-inset-right);
+    width: calc(100% - env(safe-area-inset-left) - env(safe-area-inset-right));
+    height: calc(100% - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    background: var(--bg);
+  }
+  .loading {
+    position: fixed; inset: 0; display: grid; place-items: center;
+    font: 15px -apple-system, system-ui, sans-serif; color: var(--muted);
+  }
+</style>
+</head>
+<body>
+<div class="loading">Cargando…</div>
+<iframe src="https://script.google.com/macros/s/AKfycby3IDHS9oTtDfsjsYWedcUTkBoDOXbs6V9PcdJLZIHr0fnAsuvxPgfc8I8vQa5jbrE8/exec"
+        title="Lista de la compra" allow="clipboard-write"></iframe>
+</body>
+</html>
