@@ -115,26 +115,52 @@
     };
   }
 
-  function mercadonaMenu() {
+  async function mercadonaMenu() {
     const wh = mercadonaWarehouse();
     const cm = location.pathname.match(/^\/categories\/(\d+)/);
-    msg('¿Qué quieres hacer?', `Precios del almacén ${wh}` + (wh === 'vlc1' ? ' (¿has puesto tu código postal?)' : ''));
-    if (cm) button('Importar esta categoría', false, () => mercadonaImport(cm[1], wh));
-    button('Actualizar mis precios', true, () => mercadonaMine(wh));
-    if (!cm) $('.det').textContent += ' · Para importar productos nuevos, abre antes una categoría.';
+    const note = `Precios del almacén ${wh}` + (wh === 'vlc1' ? ' (¿has puesto tu código postal?)' : '');
+    if (!cm) {
+      msg('¿Qué quieres hacer?', note + ' · Para importar productos, abre antes una categoría.');
+      return button('Actualizar mis precios', true, () => mercadonaMine(wh));
+    }
+    // La sección a la que pertenece la subcategoría abierta (el menú de la izquierda de la tienda).
+    msg('Un momento…');
+    let section = null;
+    try {
+      const tree = await mercadonaJson(`/api/categories/?lang=es&wh=${wh}`);
+      section = (tree.results || []).find(s => (s.categories || []).some(c => String(c.id) === cm[1]));
+    } catch (e) { /* si falla, queda solo la opción de esta categoría */ }
+    msg('¿Qué quieres hacer?', note);
+    if (section && section.categories.length > 1) {
+      button(`Importar toda la sección "${section.name}" (${section.categories.length} categorías)`, true,
+        () => mercadonaImport(section.categories.map(c => c.id), wh, section.name));
+    }
+    button('Importar solo esta categoría', !section, () => mercadonaImport([cm[1]], wh));
+    button('Actualizar mis precios', false, () => mercadonaMine(wh));
   }
 
-  async function mercadonaImport(id, wh) {
-    msg('Leyendo la categoría…');
-    const data = await mercadonaJson(`/api/categories/${id}/?lang=es&wh=${wh}`);
-    const items = [];
-    (data.categories || []).forEach(sub => (sub.products || []).forEach(p => {
-      if (p.published !== false && p.price_instructions) items.push(fromMercadona(p, '', sub.name || data.name));
-    }));
-    if (!items.length) return done('No he encontrado productos en esta página.', 'Abre una categoría con productos (p. ej. "Aceite, vinagre y sal").', false);
-    msg(`Guardando ${data.name}…`, `${items.length} productos`);
-    const r = await post({ products: items });
-    done(`✓ ${items.length} productos de "${data.name}"`, `${r.added} nuevos · ${r.updated} con precio actualizado`, true);
+  // Importa una o varias categorías (las de una sección), guardando por tandas para ir rápido.
+  async function mercadonaImport(ids, wh, sectionName) {
+    let pending = [], total = 0, added = 0, updated = 0, lastName = '';
+    const flush = async () => {
+      if (!pending.length) return;
+      const r = await post({ products: pending.splice(0) });
+      added += r.added; updated += r.updated;
+    };
+    for (let i = 0; i < ids.length; i++) {
+      msg(ids.length > 1 ? `Leyendo ${sectionName}…` : 'Leyendo la categoría…', ids.length > 1 ? `Categoría ${i + 1} de ${ids.length}` : '');
+      const data = await mercadonaJson(`/api/categories/${ids[i]}/?lang=es&wh=${wh}`);
+      lastName = data.name;
+      (data.categories || []).forEach(sub => (sub.products || []).forEach(p => {
+        if (p.published !== false && p.price_instructions) { pending.push(fromMercadona(p, '', sub.name || data.name)); total++; }
+      }));
+      if (pending.length >= 250) { msg(`Guardando…`, `${total} productos leídos`); await flush(); }
+      if (i < ids.length - 1) await wait(PAUSE_MS);
+    }
+    msg('Guardando…', `${total} productos`);
+    await flush();
+    if (!total) return done('No he encontrado productos aquí.', 'Abre una categoría con productos (p. ej. "Aceite, vinagre y sal").', false);
+    done(`✓ ${total} productos de "${sectionName || lastName}"`, `${added} nuevos · ${updated} con precio actualizado`, true);
   }
 
   async function mercadonaMine(wh) {
