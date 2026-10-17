@@ -1,8 +1,8 @@
 /*
- * "Importar a Compra": se ejecuta desde el marcador del navegador estando en dia.es. Dos opciones:
- *   · Importar esta categoría: lee los productos de la categoría que estás viendo (hasta 5 páginas).
- *   · Actualizar mis precios: relee solo la ficha de los productos de Dia que usas en tus listas.
- * Solo lee lo que la propia web de Dia muestra, y siempre porque tú pulsas el botón.
+ * "Importar a Compra": se ejecuta desde el marcador del navegador estando en dia.es o en tienda.mercadona.es.
+ *   · Importar esta categoría: lee los productos de la categoría que estás viendo.
+ *   · Actualizar mis precios: relee solo la ficha de los productos de ese súper que usas en tus listas.
+ * Solo lee lo que la propia web del súper te muestra, y siempre porque tú pulsas el botón.
  *
  * El marcador define antes window.__COMPRA = { url, key } con la dirección de la app y su clave.
  */
@@ -40,7 +40,10 @@
   };
 
   if (!cfg.url || !cfg.key) return done('Falta configurar el botón.', 'Vuelve a copiarlo desde la app (Gasto → Productos de Dia).');
-  if (!/(^|\.)dia\.es$/.test(location.hostname)) return done('Esto solo funciona en dia.es.', 'Entra en dia.es y vuelve a pulsar el botón.');
+  const isMercadona = /(^|\.)mercadona\.es$/.test(location.hostname);
+  if (!isMercadona && !/(^|\.)dia\.es$/.test(location.hostname)) {
+    return done('Esto solo funciona en dia.es o tienda.mercadona.es.', 'Entra en la web del súper y vuelve a pulsar el botón.');
+  }
 
   /* ---------- Utilidades ---------- */
   const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -63,6 +66,106 @@
     if (!out.ok) throw new Error(out.error || 'La app no aceptó la petición.');
     return out;
   }
+
+  /* =====================================================================
+     MERCADONA
+     La tienda pide los productos a /api/categories/<id>/ y /api/products/<id>/ con su almacén (wh=…),
+     que depende del código postal elegido. Aquí se hace la misma petición que la página que estás viendo.
+     ===================================================================== */
+  function mercadonaWarehouse() {
+    // El almacén que está usando la propia página (sale de sus peticiones); si no, el del 28035.
+    const hits = performance.getEntriesByType('resource').map(e => e.name).filter(n => /\/api\/.*[?&]wh=/.test(n));
+    const last = hits.length && hits[hits.length - 1].match(/[?&]wh=([a-z0-9]+)/i);
+    return last ? last[1] : 'mad2';
+  }
+
+  async function mercadonaJson(path) {
+    const res = await fetch(path, { credentials: 'include' });
+    if (!res.ok) throw new Error('Mercadona respondió ' + res.status);
+    return res.json();
+  }
+
+  const MERCA_UNITS = { l: 'litro', kg: 'kilo', ud: 'unidad', g: 'gramo', ml: 'mililitro' };
+  function mercaSize(pi) {
+    const n = Number(pi.unit_size);
+    if (!n) return '';
+    const fmt = { l: 'L', kg: 'kg', g: 'g', ml: 'ml', ud: 'ud' }[String(pi.size_format || '').toLowerCase()] || (pi.size_format || '');
+    const num = String(Math.round(n * 1000) / 1000).replace('.', ',');
+    return (pi.approx_size ? '~' : '') + (pi.is_pack && pi.total_units ? `${pi.total_units} x ` : '') + `${num} ${fmt}`.trim();
+  }
+  // Producto de Mercadona → formato del catálogo de la app.
+  function fromMercadona(p, section, category, brand) {
+    const pi = p.price_instructions || {};
+    const before = pi.previous_unit_price ? Number(String(pi.previous_unit_price).trim()) : null;
+    const extra = [p.packaging, mercaSize(pi)].filter(Boolean).join(' ');
+    return {
+      id: 'm' + p.id,
+      name: p.display_name + (extra ? ` · ${extra}` : ''),
+      brand: brand || p.brand || '',
+      price: Number(pi.unit_price),
+      ppu: Number(pi.reference_price || pi.bulk_price),
+      unit: MERCA_UNITS[String(pi.reference_format || '').toLowerCase()] || String(pi.reference_format || '').toLowerCase(),
+      promo: !!(pi.price_decreased || (before && before > Number(pi.unit_price))),
+      before: before || Number(pi.unit_price),
+      img: p.thumbnail || '',
+      url: p.share_url || '',
+      section: section || (p.categories && p.categories[0] && p.categories[0].name) || '',
+      category: category || '',
+      super: 'mercadona'
+    };
+  }
+
+  function mercadonaMenu() {
+    const wh = mercadonaWarehouse();
+    const cm = location.pathname.match(/^\/categories\/(\d+)/);
+    msg('¿Qué quieres hacer?', `Precios del almacén ${wh}` + (wh === 'vlc1' ? ' (¿has puesto tu código postal?)' : ''));
+    if (cm) button('Importar esta categoría', false, () => mercadonaImport(cm[1], wh));
+    button('Actualizar mis precios', true, () => mercadonaMine(wh));
+    if (!cm) $('.det').textContent += ' · Para importar productos nuevos, abre antes una categoría.';
+  }
+
+  async function mercadonaImport(id, wh) {
+    msg('Leyendo la categoría…');
+    const data = await mercadonaJson(`/api/categories/${id}/?lang=es&wh=${wh}`);
+    const items = [];
+    (data.categories || []).forEach(sub => (sub.products || []).forEach(p => {
+      if (p.published !== false && p.price_instructions) items.push(fromMercadona(p, '', sub.name || data.name));
+    }));
+    if (!items.length) return done('No he encontrado productos en esta página.', 'Abre una categoría con productos (p. ej. "Aceite, vinagre y sal").', false);
+    msg(`Guardando ${data.name}…`, `${items.length} productos`);
+    const r = await post({ products: items });
+    done(`✓ ${items.length} productos de "${data.name}"`, `${r.added} nuevos · ${r.updated} con precio actualizado`, true);
+  }
+
+  async function mercadonaMine(wh) {
+    msg('Pidiendo tus productos a la app…');
+    const mine = (await post({ action: 'mine', super: 'mercadona' })).products || [];
+    if (!mine.length) return done('No tienes productos de Mercadona vinculados.', 'Añádelos desde las sugerencias o el Catálogo en una lista de Mercadona.', false);
+    const fresh = [], missing = [];
+    let changed = 0;
+    for (let i = 0; i < mine.length; i++) {
+      const it = mine[i];
+      msg('Actualizando tus precios…', `${i + 1} de ${mine.length} · ${it.name}`);
+      try {
+        const p = await mercadonaJson(`/api/products/${it.id.replace(/^m/, '')}/?lang=es&wh=${wh}`);
+        if (!p || !p.price_instructions || p.published === false) missing.push(it.name);
+        else { const f = fromMercadona(p, '', '', p.brand); f.name = it.name; fresh.push(f); }
+      } catch (e) { missing.push(it.name); }
+      if (fresh.length >= 20 || (i === mine.length - 1 && fresh.length)) {
+        changed += (await post({ products: fresh.splice(0) })).updated;
+      }
+      if (i < mine.length - 1) await wait(PAUSE_MS);
+    }
+    done(`✓ ${changed} ${changed === 1 ? 'precio actualizado' : 'precios actualizados'}`,
+      missing.length ? `No encontrados (quizá ya no se venden): ${missing.slice(0, 5).join(', ')}${missing.length > 5 ? '…' : ''}` : 'Todos tus productos están al día.', true);
+  }
+
+  // (Aquí, después de definir todo lo de Mercadona, para que esté listo cuando se pulse un botón.)
+  if (isMercadona) return mercadonaMenu();
+
+  /* =====================================================================
+     DIA
+     ===================================================================== */
 
   /* ---------- Importar la categoría que estás viendo ---------- */
   // /seccion/c/L101  ·  /seccion/categoria/c/L2051  ·  /seccion/categoria/pag-2/c/L2051
@@ -144,7 +247,7 @@
   /* ---------- Actualizar solo los productos que usas ---------- */
   async function runMine() {
     msg('Pidiendo tus productos a la app…');
-    const mine = (await post({ action: 'mine' })).products || [];
+    const mine = (await post({ action: 'mine', super: 'dia' })).products || [];
     if (!mine.length) return done('No tienes productos de Dia vinculados.', 'Añádelos a tu lista eligiéndolos en las sugerencias "Dia" de la app.', false);
 
     const fresh = [], missing = [];
