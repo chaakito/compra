@@ -20,8 +20,9 @@
   html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
   /*
    * Esta página deja libre la zona de la muesca y la de la barra de inicio (con CSS, que iOS
-   * resuelve bien) y mete la app en medio. A la app se le pasa st=0&sb=0 para que no deje
-   * otro margen igual por su cuenta (antes se sumaban los dos).
+   * resuelve bien) y mete la app en medio. A la app se le pasa sb=0 para que no deje otro margen
+   * igual por su cuenta (antes se sumaban los dos), y st=12: 12 px de aire extra arriba, porque en el
+   * iPhone se veía cortado el borde superior de la cabecera justo bajo la barra de estado.
    */
   iframe {
     position: fixed; border: 0; background: var(--bg);
@@ -38,7 +39,7 @@
 </head>
 <body>
 <div class="loading">Cargando…</div>
-<iframe src="https://script.google.com/macros/s/AKfycby3IDHS9oTtDfsjsYWedcUTkBoDOXbs6V9PcdJLZIHr0fnAsuvxPgfc8I8vQa5jbrE8/exec?st=0&sb=0"
+<iframe src="https://script.google.com/macros/s/AKfycby3IDHS9oTtDfsjsYWedcUTkBoDOXbs6V9PcdJLZIHr0fnAsuvxPgfc8I8vQa5jbrE8/exec?st=12&sb=0"
         title="Lista de la compra" allow="clipboard-write"></iframe>
 </body>
 </html>
